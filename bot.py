@@ -123,7 +123,7 @@ async def on_ready():
 
     # APSchedulerによる日本時間スケジューラー
     scheduler = AsyncIOScheduler(timezone="Asia/Tokyo")
-    scheduler.add_job(job_morning, CronTrigger(hour=8, minute=0))
+    scheduler.add_job(job_morning, CronTrigger(hour=23, minute=46))
     scheduler.add_job(job_evening, CronTrigger(hour=16, minute=30))
     scheduler.add_job(job_night, CronTrigger(hour=22, minute=0))
 
