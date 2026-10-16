@@ -150,7 +150,7 @@ async def on_ready():
     print(f"🌍 現在の日本時間(JST): {now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
 
     scheduler = AsyncIOScheduler(timezone=JST)
-    scheduler.add_job(job_morning, CronTrigger(hour=0, minute=13, timezone=JST))
+    scheduler.add_job(job_morning, CronTrigger(hour=7, minute=00, timezone=JST))
     scheduler.add_job(job_evening, CronTrigger(hour=16, minute=30, timezone=JST))
     scheduler.add_job(job_night, CronTrigger(hour=22, minute=0, timezone=JST))
 
