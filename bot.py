@@ -23,16 +23,19 @@ def run_web():
 
 # --- Discord Bot の設定 ---
 intents = discord.Intents.default()
+intents.members = True  # ⚠️ メンバーの参加・人数検知に必須のインテンツ
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", "0"))
+# 📌 ウェルカムメッセージや人数お祝いを送る専用チャンネルID（未設定の場合はTARGET_CHANNEL_IDを使用）
+WELCOME_CHANNEL_ID = int(os.environ.get("WELCOME_CHANNEL_ID", str(TARGET_CHANNEL_ID)))
+
 JST = ZoneInfo("Asia/Tokyo")
 
 
 # --- 各種情報取得の補助関数（安定版） ---
 
 async def get_weather():
-    # 東京のcityコード（130010）を指定して日本の天気APIから取得
     url = "https://weather.tsukumijima.net/api/forecast/city/130010"
     try:
         async with aiohttp.ClientSession() as session:
@@ -43,12 +46,9 @@ async def get_weather():
                     if forecasts:
                         today = forecasts[0]
                         telop = today.get("telop", "不明")
-                        
-                        # 気温情報（最高/最低）を取得
                         temp_data = today.get("temperature", {})
                         max_temp = temp_data.get("max", {}).get("celsius", "-")
                         min_temp = temp_data.get("min", {}).get("celsius", "-")
-                        
                         return f"📍 **東京の天気:** {telop} / 気温: 最低 {min_temp}℃ / 最高 {max_temp}℃"
                 else:
                     print(f"⚠️ 天気APIステータスコード: {resp.status}")
@@ -141,6 +141,42 @@ async def job_night():
     await channel.send("夜ですね。ちゃんと皆さんは寝ましょう")
 
 
+# --- 📌 新機能: メンバー参加＆10の倍数お祝いイベント ---
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    print(f"👤 メンバーが参加しました: {member.name} (ID: {member.id})")
+    
+    # 送信先チャンネルの取得
+    channel_id = WELCOME_CHANNEL_ID if WELCOME_CHANNEL_ID != 0 else TARGET_CHANNEL_ID
+    if channel_id == 0:
+        print("⚠️ ウェルカムメッセージの送信先チャンネルIDが設定されていません。")
+        return
+
+    try:
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            channel = await bot.fetch_channel(channel_id)
+        
+        if channel:
+            # 1. 特定のチャンネルで特定のメッセージを送信
+            welcome_text = f"🎉 {member.mention} さんがサーバーに参加しました！ようこそ！"
+            await channel.send(welcome_text)
+
+            # 2. メンバー数が10の倍数になったかチェック
+            total_members = member.guild.member_count
+            if total_members % 10 == 0:
+                congrats_embed = discord.Embed(
+                    title="🎊 メンバー突破記念！",
+                    description=f"すごい！サーバーの総メンバー数が **{total_members}人** に到達しました！皆様ありがとうございます！",
+                    color=discord.Color.purple()
+                )
+                await channel.send(embed=congrats_embed)
+
+    except Exception as e:
+        print(f"❌ メンバー入室処理エラー: {e}")
+
+
 # --- ボット起動イベント ---
 
 @bot.event
@@ -155,7 +191,7 @@ async def on_ready():
     scheduler.add_job(job_night, CronTrigger(hour=22, minute=0, timezone=JST))
 
     scheduler.start()
-    print("⏰ スケジューラーがJST基準で起動しました（8:00 / 16:30 / 22:00）")
+    print("⏰ スケジューラーがJST基準で起動しました（7:00 / 16:30 / 22:00）")
 
 if __name__ == "__main__":
     web_thread = threading.Thread(target=run_web)
