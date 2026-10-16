@@ -84,11 +84,22 @@ async def get_earthquake_info():
     return "地震情報の取得に失敗しました。"
 
 
-# --- 定期実行するタスク ---
+# --- 定期実行するタスク（fetch_channelで確実に送信） ---
+
+async def get_target_channel():
+    try:
+        channel = bot.get_channel(TARGET_CHANNEL_ID)
+        if not channel:
+            channel = await bot.fetch_channel(TARGET_CHANNEL_ID)
+        return channel
+    except Exception as e:
+        print(f"❌ チャンネルの取得に失敗しました: {e}")
+        return None
 
 async def job_morning():
-    channel = bot.get_channel(TARGET_CHANNEL_ID)
+    channel = await get_target_channel()
     if not channel:
+        print("❌ 通知先チャンネルが見つかりませんでした。")
         return
 
     weather = await get_weather()
@@ -103,13 +114,13 @@ async def job_morning():
     await channel.send("おはようございます！今日も一日頑張りましょう！", embed=embed)
 
 async def job_evening():
-    channel = bot.get_channel(TARGET_CHANNEL_ID)
+    channel = await get_target_channel()
     if not channel:
         return
     await channel.send("夕方ですね、皆さんも、外出などの際は気を付けてくださいね。")
 
 async def job_night():
-    channel = bot.get_channel(TARGET_CHANNEL_ID)
+    channel = await get_target_channel()
     if not channel:
         return
     await channel.send("夜ですね。ちゃんと皆さんは寝ましょう")
@@ -123,7 +134,8 @@ async def on_ready():
 
     # APSchedulerによる日本時間スケジューラー
     scheduler = AsyncIOScheduler(timezone="Asia/Tokyo")
-    scheduler.add_job(job_morning, CronTrigger(hour=23, minute=46))
+    # テスト用に現在の時間付近（または朝8:00）に設定
+    scheduler.add_job(job_morning, CronTrigger(hour=23, minute=53))
     scheduler.add_job(job_evening, CronTrigger(hour=16, minute=30))
     scheduler.add_job(job_night, CronTrigger(hour=22, minute=0))
 
@@ -131,7 +143,6 @@ async def on_ready():
     print("⏰ スケジューラーが起動しました（8:00 / 16:30 / 22:00 JST）")
 
 if __name__ == "__main__":
-    # Flaskを別スレッドで起動
     web_thread = threading.Thread(target=run_web)
     web_thread.daemon = True
     web_thread.start()
