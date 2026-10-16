@@ -2,6 +2,8 @@ import os
 import threading
 import aiohttp
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from zoneinfo import ZoneInfo  # 確実なタイムゾーン指定用
 import discord
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -23,9 +25,9 @@ def run_web():
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 送信先のチャンネルID（環境変数、または直接記述）
 TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", "0"))
 WEATHER_CITY = "Tokyo"
+JST = ZoneInfo("Asia/Tokyo")
 
 
 # --- 各種情報取得の補助関数 ---
@@ -84,7 +86,7 @@ async def get_earthquake_info():
     return "地震情報の取得に失敗しました。"
 
 
-# --- 定期実行するタスク（fetch_channelで確実に送信） ---
+# --- 定期実行するタスク ---
 
 async def get_target_channel():
     try:
@@ -97,6 +99,7 @@ async def get_target_channel():
         return None
 
 async def job_morning():
+    print(f"⏰ [JST {datetime.now(JST)}] job_morning が実行されました！")
     channel = await get_target_channel()
     if not channel:
         print("❌ 通知先チャンネルが見つかりませんでした。")
@@ -114,12 +117,14 @@ async def job_morning():
     await channel.send("おはようございます！今日も一日頑張りましょう！", embed=embed)
 
 async def job_evening():
+    print(f"⏰ [JST {datetime.now(JST)}] job_evening が実行されました！")
     channel = await get_target_channel()
     if not channel:
         return
     await channel.send("夕方ですね、皆さんも、外出などの際は気を付けてくださいね。")
 
 async def job_night():
+    print(f"⏰ [JST {datetime.now(JST)}] job_night が実行されました！")
     channel = await get_target_channel()
     if not channel:
         return
@@ -131,16 +136,21 @@ async def job_night():
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+    
+    # 現在の日本時間をログに出して正しく取れているか確認
+    now_jst = datetime.now(JST)
+    print(f"🌍 現在の日本時間(JST): {now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # APSchedulerによる日本時間スケジューラー
-    scheduler = AsyncIOScheduler(timezone="Asia/Tokyo")
-    # テスト用に現在の時間付近（または朝8:00）に設定
-    scheduler.add_job(job_morning, CronTrigger(hour=23, minute=53))
-    scheduler.add_job(job_evening, CronTrigger(hour=16, minute=30))
-    scheduler.add_job(job_night, CronTrigger(hour=22, minute=0))
+    # zoneinfoを使った確実なJSTスケジューラー
+    scheduler = AsyncIOScheduler(timezone=JST)
+    
+    # 本番用の時間設定（必要に応じてテスト時はここを書き換えてください）
+    scheduler.add_job(job_morning, CronTrigger(hour=23, minute=59, timezone=JST))
+    scheduler.add_job(job_evening, CronTrigger(hour=16, minute=30, timezone=JST))
+    scheduler.add_job(job_night, CronTrigger(hour=22, minute=0, timezone=JST))
 
     scheduler.start()
-    print("⏰ スケジューラーが起動しました（8:00 / 16:30 / 22:00 JST）")
+    print("⏰ スケジューラーがJST基準で起動しました（8:00 / 16:30 / 22:00）")
 
 if __name__ == "__main__":
     web_thread = threading.Thread(target=run_web)
