@@ -26,30 +26,33 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", "0"))
-WEATHER_CITY = "Tokyo"
 JST = ZoneInfo("Asia/Tokyo")
 
 
-# --- 各種情報取得の補助関数（改善版） ---
+# --- 各種情報取得の補助関数（安定版） ---
 
 async def get_weather():
-    # wttr.in からJSON形式で安全に取得
-    url = f"https://wttr.in/{WEATHER_CITY}?format=j1"
+    # Open-Meteo API (東京の緯度経度: 35.6895, 139.6917)
+    url = "https://api.open-meteo.com/v1/forecast?latitude=35.6895&longitude=139.6917&current=temperature_2m,weather_code&timezone=Asia%2FTokyo"
+    
+    # 天気コード（WMO Weather interpretation codes）の日本語変換
+    weather_codes = {
+        0: "快晴", 1: "晴れ", 2: "一部曇り", 3: "曇り",
+        45: "霧", 48: "霧氷", 51: "霧雨", 53: "霧雨", 55: "濃い霧雨",
+        61: "小雨", 63: "雨", 65: "大雨", 71: "小雪", 73: "雪", 75: "大雪",
+        95: "雷雨", 96: "雷雨（ひょう伴う）", 99: "雷雨（ひょう伴う）"
+    }
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    current = data["current_condition"][0]
-                    # 日本語テキストが取れない場合のフォールバック
-                    desc = "不明"
-                    if "lang_ja" in current and current["lang_ja"]:
-                        desc = current["lang_ja"][0]["value"]
-                    elif "weatherDesc" in current and current["weatherDesc"]:
-                        desc = current["weatherDesc"][0]["value"]
-                    
-                    temp = current.get("temp_C", "不明")
-                    return f"📍 **{WEATHER_CITY}の天気:** {desc} / 気温: {temp}℃"
+                    current = data.get("current", {})
+                    temp = current.get("temperature_2m", "不明")
+                    code = current.get("weather_code", 0)
+                    desc = weather_codes.get(code, "不明")
+                    return f"📍 **東京の天気:** {desc} / 気温: {temp}℃"
     except Exception as e:
         print(f"❌ 天気取得エラー: {e}")
     return "📍 天気情報の取得に失敗しました。"
@@ -76,20 +79,19 @@ async def get_news():
     return "\n".join(news_list)
 
 async def get_earthquake_info():
-    # 気象庁のエンドポイントから取得
-    url = "https://www.jma.go.jp/bosai/quake/data/list.json"
+    # P2P地震情報 API v2 を使用して確実に震源地を取得
+    url = "https://api.p2pquake.net/v2/history?codes=551&limit=1"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    if data and isinstance(data, list):
+                    if data and isinstance(data, list) and len(data) > 0:
                         latest = data[0]
-                        time = latest.get("at", "不明").replace("T", " ").replace("Z", "")
-                        hypo = latest.get("anvi", latest.get("hypo", "不明")) # 震源地名のキー揺れに対応
-                        if isinstance(hypo, dict):
-                            hypo = hypo.get("name", "不明")
-                        mag = latest.get("mag", "不明")
+                        earthquake = latest.get("earthquake", {})
+                        time = earthquake.get("time", "不明")
+                        hypo = earthquake.get("hypocenter", {}).get("name", "不明")
+                        mag = earthquake.get("hypocenter", {}).get("magnitude", "不明")
                         return f"⚠️ **直近の地震情報:**\n発生時刻: {time}\n震源地: {hypo} (M{mag})"
     except Exception as e:
         print(f"❌ 地震情報取得エラー: {e}")
@@ -150,7 +152,7 @@ async def on_ready():
     print(f"🌍 現在の日本時間(JST): {now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
 
     scheduler = AsyncIOScheduler(timezone=JST)
-    scheduler.add_job(job_morning, CronTrigger(hour=0, minute=3, timezone=JST))
+    scheduler.add_job(job_morning, CronTrigger(hour=0, minute=7, timezone=JST))
     scheduler.add_job(job_evening, CronTrigger(hour=16, minute=30, timezone=JST))
     scheduler.add_job(job_night, CronTrigger(hour=22, minute=0, timezone=JST))
 
