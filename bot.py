@@ -27,8 +27,10 @@ intents.members = True  # ⚠️ メンバーの参加・人数検知に必須�
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", "0"))
-# 📌 ウェルカムメッセージや人数お祝いを送る専用チャンネルID（未設定の場合はTARGET_CHANNEL_IDを使用）
+# 📌 ウェルカムメッセージを送るチャンネル（未設定ならTARGET_CHANNEL_IDを使用）
 WELCOME_CHANNEL_ID = int(os.environ.get("WELCOME_CHANNEL_ID", str(TARGET_CHANNEL_ID)))
+# 📌 10の倍数お祝いを送るチャンネル（未設定ならWELCOME_CHANNEL_IDを使用）
+MILESTONE_CHANNEL_ID = int(os.environ.get("MILESTONE_CHANNEL_ID", str(WELCOME_CHANNEL_ID)))
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -141,40 +143,37 @@ async def job_night():
     await channel.send("夜ですね。ちゃんと皆さんは寝ましょう")
 
 
-# --- 📌 新機能: メンバー参加＆10の倍数お祝いイベント ---
+# --- 📌 メンバー参加＆10の倍数お祝いイベント（別チャンネル指定対応） ---
 
 @bot.event
 async def on_member_join(member: discord.Member):
     print(f"👤 メンバーが参加しました: {member.name} (ID: {member.id})")
     
-    # 送信先チャンネルの取得
-    channel_id = WELCOME_CHANNEL_ID if WELCOME_CHANNEL_ID != 0 else TARGET_CHANNEL_ID
-    if channel_id == 0:
-        print("⚠️ ウェルカムメッセージの送信先チャンネルIDが設定されていません。")
-        return
+    # 1. ウェルカムメッセージの送信処理
+    if WELCOME_CHANNEL_ID != 0:
+        try:
+            welcome_channel = bot.get_channel(WELCOME_CHANNEL_ID) or await bot.fetch_channel(WELCOME_CHANNEL_ID)
+            if welcome_channel:
+                welcome_text = f"🎉 {member.mention} さんがサーバーに参加しました！ようこそ！まずは。https://discord.com/channels/1555584934951915706/1555585863402913922 で認証してね"
+                await welcome_channel.send(welcome_text)
+        except Exception as e:
+            print(f"❌ ウェルカムメッセージ送信エラー: {e}")
 
-    try:
-        channel = bot.get_channel(channel_id)
-        if not channel:
-            channel = await bot.fetch_channel(channel_id)
-        
-        if channel:
-            # 1. 特定のチャンネルで特定のメッセージを送信
-            welcome_text = f"🎉 {member.mention} さんがサーバーに参加しました！ようこそ！まずは。https://discord.com/channels/1555584934951915706/1555585863402913922 で認証してね！"
-            await channel.send(welcome_text)
-
-            # 2. メンバー数が10の倍数になったかチェック
+    # 2. 総メンバー数が10の倍数になったときのお祝い処理
+    if MILESTONE_CHANNEL_ID != 0:
+        try:
             total_members = member.guild.member_count
             if total_members % 10 == 0:
-                congrats_embed = discord.Embed(
-                    title="🎊 メンバー突破記念！",
-                    description=f"すごい！サーバーの総メンバー数が **{total_members}人** に到達しました！皆様ありがとうございます！",
-                    color=discord.Color.purple()
-                )
-                await channel.send(embed=congrats_embed)
-
-    except Exception as e:
-        print(f"❌ メンバー入室処理エラー: {e}")
+                milestone_channel = bot.get_channel(MILESTONE_CHANNEL_ID) or await bot.fetch_channel(MILESTONE_CHANNEL_ID)
+                if milestone_channel:
+                    congrats_embed = discord.Embed(
+                        title="🎊 メンバー突破記念！",
+                        description=f"すごい！サーバーの総メンバー数が **{total_members}人** に到達しました！皆様ありがとうございます！",
+                        color=discord.Color.purple()
+                    )
+                    await milestone_channel.send(embed=congrats_embed)
+        except Exception as e:
+            print(f"❌ 10の倍数お祝いメッセージ送信エラー: {e}")
 
 
 # --- ボット起動イベント ---
