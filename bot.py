@@ -29,35 +29,27 @@ TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", "0"))
 JST = ZoneInfo("Asia/Tokyo")
 
 
-# --- 各種情報取得の補助関数（修正・強化版） ---
+# --- 各種情報取得の補助関数（安定版） ---
 
 async def get_weather():
-    # URLエンコード問題を避けるため、パラメータを辞書で安全に渡します
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": "35.6895",
-        "longitude": "139.6917",
-        "current": "temperature_2m,weather_code",
-        "timezone": "Asia/Tokyo"
-    }
-    
-    weather_codes = {
-        0: "快晴", 1: "晴れ", 2: "一部曇り", 3: "曇り",
-        45: "霧", 48: "霧氷", 51: "霧雨", 53: "霧雨", 55: "濃い霧雨",
-        61: "小雨", 63: "雨", 65: "大雨", 71: "小雪", 73: "雪", 75: "大雪",
-        95: "雷雨", 96: "雷雨（ひょう伴う）", 99: "雷雨（ひょう伴う）"
-    }
-
+    # 東京のcityコード（130010）を指定して日本の天気APIから取得
+    url = "https://weather.tsukumijima.net/api/forecast/city/130010"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, timeout=10) as resp:
+            async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    current = data.get("current", {})
-                    temp = current.get("temperature_2m", "不明")
-                    code = current.get("weather_code", 0)
-                    desc = weather_codes.get(code, "不明")
-                    return f"📍 **東京の天気:** {desc} / 気温: {temp}℃"
+                    forecasts = data.get("forecasts", [])
+                    if forecasts:
+                        today = forecasts[0]
+                        telop = today.get("telop", "不明")
+                        
+                        # 気温情報（最高/最低）を取得
+                        temp_data = today.get("temperature", {})
+                        max_temp = temp_data.get("max", {}).get("celsius", "-")
+                        min_temp = temp_data.get("min", {}).get("celsius", "-")
+                        
+                        return f"📍 **東京の天気:** {telop} / 気温: 最低 {min_temp}℃ / 最高 {max_temp}℃"
                 else:
                     print(f"⚠️ 天気APIステータスコード: {resp.status}")
     except Exception as e:
@@ -158,8 +150,7 @@ async def on_ready():
     print(f"🌍 現在の日本時間(JST): {now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
 
     scheduler = AsyncIOScheduler(timezone=JST)
-    # テスト時はお好みの時間に調整してください
-    scheduler.add_job(job_morning, CronTrigger(hour=0, minute=12, timezone=JST))
+    scheduler.add_job(job_morning, CronTrigger(hour=0, minute=13, timezone=JST))
     scheduler.add_job(job_evening, CronTrigger(hour=16, minute=30, timezone=JST))
     scheduler.add_job(job_night, CronTrigger(hour=22, minute=0, timezone=JST))
 
