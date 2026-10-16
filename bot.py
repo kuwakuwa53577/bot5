@@ -3,7 +3,7 @@ import threading
 import aiohttp
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from zoneinfo import ZoneInfo  # 確実なタイムゾーン指定用
+from zoneinfo import ZoneInfo
 import discord
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -30,21 +30,28 @@ WEATHER_CITY = "Tokyo"
 JST = ZoneInfo("Asia/Tokyo")
 
 
-# --- 各種情報取得の補助関数 ---
+# --- 各種情報取得の補助関数（改善版） ---
 
 async def get_weather():
-    url = f"https://wttr.in/{WEATHER_CITY}?format=j1&lang=ja"
+    # wttr.in からJSON形式で安全に取得
+    url = f"https://wttr.in/{WEATHER_CITY}?format=j1"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
+            async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     current = data["current_condition"][0]
-                    desc = current["lang_ja"][0]["value"]
-                    temp = current["temp_C"]
+                    # 日本語テキストが取れない場合のフォールバック
+                    desc = "不明"
+                    if "lang_ja" in current and current["lang_ja"]:
+                        desc = current["lang_ja"][0]["value"]
+                    elif "weatherDesc" in current and current["weatherDesc"]:
+                        desc = current["weatherDesc"][0]["value"]
+                    
+                    temp = current.get("temp_C", "不明")
                     return f"📍 **{WEATHER_CITY}の天気:** {desc} / 気温: {temp}℃"
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"❌ 天気取得エラー: {e}")
     return "📍 天気情報の取得に失敗しました。"
 
 async def get_news():
@@ -52,7 +59,7 @@ async def get_news():
     url = "https://www.nhk.or.jp/rss/news/cat0.xml"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
+            async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     text = await resp.text()
                     root = ET.fromstring(text)
@@ -61,29 +68,32 @@ async def get_news():
                         title = item.find("title").text
                         link = item.find("link").text
                         news_list.append(f"• [{title}]({link})")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"❌ ニュース取得エラー: {e}")
     
     if not news_list:
         return "ニュースの取得に失敗しました。"
     return "\n".join(news_list)
 
 async def get_earthquake_info():
+    # 気象庁のエンドポイントから取得
     url = "https://www.jma.go.jp/bosai/quake/data/list.json"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
+            async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    if data:
+                    if data and isinstance(data, list):
                         latest = data[0]
                         time = latest.get("at", "不明").replace("T", " ").replace("Z", "")
-                        hypo = latest.get("hypo", {}).get("name", "不明")
+                        hypo = latest.get("anvi", latest.get("hypo", "不明")) # 震源地名のキー揺れに対応
+                        if isinstance(hypo, dict):
+                            hypo = hypo.get("name", "不明")
                         mag = latest.get("mag", "不明")
                         return f"⚠️ **直近の地震情報:**\n発生時刻: {time}\n震源地: {hypo} (M{mag})"
-    except Exception:
-        pass
-    return "地震情報の取得に失敗しました。"
+    except Exception as e:
+        print(f"❌ 地震情報取得エラー: {e}")
+    return "直近の地震情報の取得に失敗しました。"
 
 
 # --- 定期実行するタスク ---
@@ -136,16 +146,11 @@ async def job_night():
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    
-    # 現在の日本時間をログに出して正しく取れているか確認
     now_jst = datetime.now(JST)
     print(f"🌍 現在の日本時間(JST): {now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # zoneinfoを使った確実なJSTスケジューラー
     scheduler = AsyncIOScheduler(timezone=JST)
-    
-    # 本番用の時間設定（必要に応じてテスト時はここを書き換えてください）
-    scheduler.add_job(job_morning, CronTrigger(hour=23, minute=59, timezone=JST))
+    scheduler.add_job(job_morning, CronTrigger(hour=0, minute=3, timezone=JST))
     scheduler.add_job(job_evening, CronTrigger(hour=16, minute=30, timezone=JST))
     scheduler.add_job(job_night, CronTrigger(hour=22, minute=0, timezone=JST))
 
