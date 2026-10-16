@@ -160,7 +160,7 @@ async def on_member_join(member: discord.Member):
         
         if channel:
             # 1. 特定のチャンネルで特定のメッセージを送信
-            welcome_text = f"🎉 {member.mention} さんがサーバーに参加しました！ようこそ！"
+            welcome_text = f"🎉 {member.mention} さんがサーバーに参加しました！ようこそ！まずは。https://discord.com/channels/1555584934951915706/1555585863402913922 で認証してね！"
             await channel.send(welcome_text)
 
             # 2. メンバー数が10の倍数になったかチェック
