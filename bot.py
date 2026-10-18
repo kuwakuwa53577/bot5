@@ -61,24 +61,40 @@ async def get_weather():
 async def get_news():
     news_list = []
     url = "https://www.nhk.or.jp/rss/news/cat0.xml"
+    # ブラウザからのアクセスに見せかけるためのヘッダー
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as resp:
+            async with session.get(url, headers=headers, timeout=10) as resp:
                 if resp.status == 200:
                     text = await resp.text()
+                    # 返ってきた内容がHTML（Cloudflareのブロック画面など）になっていないか簡易チェック
+                    if "<html" in text.lower() or "<body" in text.lower():
+                        print("⚠️ ニュース取得先からHTML（ブロック画面）が返されました。")
+                        return "ニュースの取得に一時制限がかかっています。"
+                    
                     root = ET.fromstring(text)
                     items = root.findall(".//item")[:5]
                     for item in items:
-                        title = item.find("title").text
-                        link = item.find("link").text
-                        news_list.append(f"• [{title}]({link})")
+                        title_elem = item.find("title")
+                        link_elem = item.find("link")
+                        if title_elem is not None and link_elem is not None:
+                            title = title_elem.text
+                            link = link_elem.text
+                            news_list.append(f"• [{title}]({link})")
+                else:
+                    print(f"⚠️ ニュースAPIステータスコード: {resp.status}")
+    except ET.ParseError as e:
+        print(f"❌ ニュースのXMLパースエラー（Cloudflare等によるブロックの可能性）: {e}")
     except Exception as e:
         print(f"❌ ニュース取得エラー: {e}")
     
     if not news_list:
         return "ニュースの取得に失敗しました。"
     return "\n".join(news_list)
-
+    
 async def get_earthquake_info():
     url = "https://api.p2pquake.net/v2/history?codes=551&limit=1"
     try:
